@@ -138,15 +138,27 @@ class SpatialRescaler(nn.Module):
 
 class FrozenCLIPEmbedder(AbstractEncoder):
     """Uses the CLIP transformer encoder for text (from Hugging Face)"""
-    def __init__(self, version="openai/clip-vit-large-patch14", device="cuda", max_length=77):
+    def __init__(self, version="openai/clip-vit-large-patch14", device="cuda", max_length=77, rope=False, alibi=True):
         super().__init__()
         self.tokenizer = CLIPTokenizer.from_pretrained(version)
         self.transformer = CLIPTextModel.from_pretrained(version)
-        # === Inject RoPE into attention layers ===
-        for name, module in self.transformer.named_modules():
-            if isinstance(module, torch.nn.MultiheadAttention):
-                setattr(self.transformer, name, RoPEAttentionWrapper(module))
-                print(f"[RoPE] Wrapped attention module: {name}")
+        # # === Inject RoPE into attention layers ===
+        # for name, module in self.transformer.named_modules():
+        #     if isinstance(module, torch.nn.MultiheadAttention):
+        #         setattr(self.transformer, name, RoPEAttentionWrapper(module))
+        #         print(f"[RoPE] Wrapped attention module: {name}")
+        if rope:
+            from ldm.modules.rope_utils import build_rope_cache, apply_rope
+            for name, module in self.transformer.named_modules():
+                if isinstance(module, torch.nn.MultiheadAttention):
+                    setattr(self.transformer, name, RoPEAttentionWrapper(module))
+                    print(f"[RoPE] Wrapped attention module: {name}")
+        elif alibi:
+            from ldm.modules.alibi_utils import apply_alibi  # <-- I'll give you alibi_utils.py too
+            apply_alibi(self.transformer)
+            print(f"[ALiBi] Applied ALiBi bias to attention layers.")
+        else:
+            print(f"[Info] No special positional embedding (standard CLIP attention).")
 
         self.device = device
         self.max_length = max_length
